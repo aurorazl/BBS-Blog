@@ -1,0 +1,33 @@
+{% extends 'home_base.html' %}
+
+{% block content %}
+    <div class="summary-list">
+        {% for row in article_list %}
+            <div class="summary-item">
+                <div class="summary-title">
+                    <a href="/{{ blog.site }}/{{ row.nid }}/">{{ row.title }}</a>
+                </div>
+                <div class="summary-content">
+                    {{ row.content }}
+                </div>
+                <div class="summary-footer">
+                    <span>posted @ {{ row.create_time|date:"Y-m-d H:i:s" }}</span>
+                    <span>{{ row.blog.user.nickname }}</span>
+                    <span>阅读({{ row.read_count }})</span>
+                    <a>评论({{ row.comment_count }})</a>
+                    <a href="/backend/article_edit/{{ row.nid }}.html">编辑</a>
+                </div>
+            </div>
+        {% endfor %}
+
+    </div>
+    <div class="page">
+            <span>每页个数</span>
+            <select onchange="changePageSize(this)" id="ps">
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="30">30</option>
+                <option value="50">50</option>
+            </select>
+    </div>
+{% endblock %}

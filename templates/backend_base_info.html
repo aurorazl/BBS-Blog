@@ -1,0 +1,200 @@
+{% extends 'backend_layout.html' %}
+
+{% block css %}
+    <style>
+        .form-horizontal .control-label {
+            padding-top: 7px;
+            margin-bottom: 0;
+            text-align: right;
+        }
+
+        .avatar-container {
+            height: 200px;
+            width: 200px;
+            padding: 2px;
+            border: 1px solid #dddddd;
+            position: relative;
+        }
+
+        .avatar-container form img {
+            height: 200px;
+            width: 100%;
+            border: 0;
+            overflow: hidden;
+            border-radius: 50%;
+        }
+
+        .avatar-container .text {
+            text-align: center;
+        }
+
+        .avatar-container .img-file {
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            opacity: 0;
+            position: absolute;
+            z-index: 102;
+        }
+        .form-group span{
+            color: red;
+            display: block;
+            text-align: right;
+        }
+
+    </style>
+{% endblock %}
+{% block content %}
+    <ol class="breadcrumb">
+        <li><a href="#">用户管理</a></li>
+        <li class="active">用户信息</li>
+    </ol>
+    <div>
+        <div class="row" style="position: relative;">
+            <form class="form-horizontal" novalidate id="info_form" method="post" action="/backend/base_info.html">
+                {% csrf_token %}
+                <div class="col-xs-12">
+                    <div class="form-group">
+                        <label class="col-xs-2 control-label">用户名<span>{{ form.username.errors.0 }}</span></label>
+
+                        <div class="col-xs-5">
+                            {{ form.username }}
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="col-xs-2 control-label">密码<span>{{ form.password.errors.0 }}</span></label>
+
+                        <div class="col-xs-5">
+                            {{ form.password }}
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="col-xs-2 control-label">邮箱<span>{{ form.email.errors.0 }}</span></label>
+
+                        <div class="col-xs-5">
+                            {{ form.email }}
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="nickname" class="col-xs-2 control-label">昵称<span>{{ form.nickname.errors.0 }}</span></label>
+
+                        <div class="col-xs-5">
+                            {{ form.nickname }}
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="blogUrl" class="col-xs-2 control-label">博客地址<span>{{ form.blog__site.errors.0 }}</span></label>
+
+                        <div class="col-xs-5">
+                            {{ form.blog__site }}
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="blogTheme" class="col-xs-2 control-label">博客主题<span>{{ form.blog__theme.errors.0 }}</span></label>
+
+                        <div class="col-xs-5">
+                            {{ form.blog__theme }}
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="blogTitle" class="col-xs-2 control-label">博客标题内容<span>{{ form.blog__title.errors.0 }}</span></label>
+
+                        <div class="col-xs-8">
+                            {{ form.blog__title }}
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <div class="col-xs-offset-2 col-xs-10">
+                            <button type="submit" class="btn btn-primary" id="base_info">保 存</button>
+                        </div>
+                    </div>
+
+                </div>
+            </form>
+            <div style="position: absolute;" class="col-xs-offset-7 col-xs-5">
+                <div class="avatar-container">
+                    <iframe style="display: none;" id="upload_iframe" name="upload_iframe"></iframe>
+                    <form id="upload_img" method="POST" action="/backend/avatar_upload.html" enctype="multipart/form-data"
+                          target="upload_iframe">
+                        {% csrf_token %}
+                        <img id="previewImg" origin="/static/imgs/avatar/default.png" src="{{ request.session.avatar }}" />
+
+                        <div class="text">点击图片更换(<a href="#">撤销</a>)</div>
+                        <input id="avatarImg" name="avatar_img" type="file" class="img-file"/>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block js %}
+    <script type="text/javascript">
+        $(function () {
+            bindChangeAvatar4();
+            bindSubmit();
+        });
+
+        function bindChangeAvatar1() {
+            $('#avatarImg').change(function () {
+                var file_obj = $(this)[0].files[0];
+                $('#prevViewImg')[0].src = window.URL.createObjectURL(file_obj)
+            })
+        }
+
+        function bindChangeAvatar2() {
+            $('#avatarImg').change(function () {
+                var file_obj = $(this)[0].files[0];
+                var reader = new FileReader();
+                reader.readAsDataURL(file_obj);
+                reader.onload = function (e) {
+                    $('#previewImg')[0].src = this.result;
+                };
+            })
+        }
+
+        function bindChangeAvatar3() {
+            $('#avatarImg').change(function () {
+
+                var file_obj = $(this)[0].files[0];
+                var form = new FormData();
+                form.append('avatar_img', file_obj);
+                form.append('csrfmiddlewaretoken','{{ csrf_token }}');
+                $.ajax({
+                    url: '/avatar_upload.html',
+                    type:'POST',
+                    data: form,
+                    processData: false,  // tell jQuery not to process the data
+                    contentType: false,  // tell jQuery not to set contentType
+                    success: function (arg) {
+                         var obj = JSON.parse(arg);
+                        $('#previewImg').attr('src','/' + obj.data);
+                    }
+                })
+            })
+        }
+
+        function bindChangeAvatar4() {
+            $('#avatarImg').change(function () {
+                $(this).parent().submit();
+
+                $('#upload_iframe').load(function () {
+                    var iframeContents = this.contentWindow.document.body.innerText;
+                    iframeContents = JSON.parse(iframeContents);
+                    if (iframeContents.status) {
+                        $('#previewImg').attr('src', '/' + iframeContents.data);
+                    }
+                })
+
+            })
+        }
+        
+        function bindSubmit() {
+            $('#base_info').click(function () {
+                $('#info_form').submit();
+            })
+        }
+    </script>
+{% endblock %}

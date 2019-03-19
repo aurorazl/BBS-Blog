@@ -1,0 +1,35 @@
+img{
+    border: 0;
+}
+.left{
+    float: left;
+}
+.right{
+    float: right;
+}
+.w {
+    width: 877px;
+    margin: 0 auto;
+}
+
+.w .item {
+    width: 25%;
+    float: left;
+}
+
+.w .item img {
+    width: 100%;
+    margin-bottom: 5px;
+}
+.summary-footer{
+    text-align: right;
+    padding-right: 41px;
+    padding-top: 6px;
+    color:#999;
+}
+.footers .ele{
+    position: relative;
+}
+.recommend .ele{
+    position: relative;
+}

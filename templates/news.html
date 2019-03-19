@@ -1,0 +1,49 @@
+{% extends 'index_base.html' %}
+{% block ShowContent %}
+    <div class="article-list">
+        {% for row in news_list %}
+            <div class="article-item clearfix">
+                <h3><a href="{{ row.blog.site }}/{{ row.nid }}/">{{ row.title }}</a></h3>
+                <div class="clearfix">
+                    <a class="avatar left" href="#">
+                        <img src={{ row.blog.user.avatar }}>
+                    </a>
+                    {{ row.content }}
+                </div>
+                <div class="footers" id="{{ row.nid }}">
+                    <a href="{{ row.blog.site }}/">
+                        <i class="fa fa-user-o" aria-hidden="true"></i>
+                        <span>{{ row.blog.user.nickname }}</span>
+                    </a>
+                    <span>发布于 {{ row.create_time }}</span>
+                    <a href="#" class="ele">
+                        <i class="fa fa-commenting-o" aria-hidden="true"></i>
+                        <span>{{ row.comment_count }}</span>
+                    </a>
+                    <a href="#" class="ele">
+                        <i class="fa fa-thumbs-o-up" aria-hidden="true"></i>
+                        <span>{{ row.up_count }}</span>
+                    </a>
+                </div>
+
+            </div>
+        {% endfor %}
+
+    </div>
+
+    <div class="clearfix">
+
+        <ul class="pagination">
+            {{ page_str }}
+        </ul>
+
+    </div>
+{% endblock %}
+{% block javascript %}
+    <script>
+        $(function () {
+            $.Up('/backend/up/')
+        })
+    </script>
+{% endblock %}
+

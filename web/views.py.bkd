@@ -1,0 +1,464 @@
+from django.shortcuts import render,redirect,HttpResponse,reverse
+from web import models
+import json,uuid,os
+from django import forms
+from django.forms.models import model_to_dict
+from io import BytesIO
+from utils.check_code import create_validate_code
+from utils import paginations
+from django.db import transaction
+from utils.xss import XSSFilter
+from .forms.account import LoginForm,RegisterForm
+from .forms.article import ArticleForm
+from  .forms.trouble import TroubleForm,TroubleDealForm
+import datetime
+
+def check_auth(func):
+    def inner(request,*args,**kwargs):
+        v = request.session.get('user_info', None)
+        if not v:
+            return redirect('/login.html')
+        return func(request,*args,**kwargs)
+    return inner
+
+@check_auth
+def home(request):
+    current_page = request.GET.get('p', 1)
+    current_page = int(current_page)
+    val = request.COOKIES.get('per_page_count',10)
+    if not val:
+        val = '10'
+    article = models.Article.objects.order_by('-nid').all()              #
+    page_obj = paginations.Page(current_page,len(article),int(val))
+    article_list = article[page_obj.start:page_obj.end]
+    page_str = page_obj.page_str("/home.html")
+    category_list = models.Article.category_choice
+    date_list = models.Article.objects.raw(
+        'select nid, count(nid) as num,strftime("%Y-%m",create_time) as ctime from web_article group by strftime("%Y-%m",create_time)')
+    tag_list = models.Tag.objects.all()
+    return render(request,'home.html',{'article_list':article_list,'tag_list':tag_list,'category_list':category_list,'page_str':page_str,'date_list':date_list})
+
+
+def login(request):
+    if request.method == 'GET':
+        return render(request,'login.html')
+    elif request.method == 'POST':
+        result = {'status': False, 'message': None, 'data': None}
+        form = LoginForm(request=request, data=request.POST)
+        if form.is_valid():
+            username = form.cleaned_data.get('username')
+            password = form.cleaned_data.get('password')
+            user_info = models.UserInfo.objects.filter(username=username, password=password).\
+                values('nid', 'nickname',
+                       'username', 'email','password').first()
+            if not user_info:
+                result['message'] = '用户名或密码错误'
+            else:
+                result['status'] = True
+                request.session['user_info'] = user_info
+                obj = models.UserInfo.objects.filter(username=username, password=password).first()
+                request.session['avatar'] = obj.avatar
+                if form.cleaned_data.get('rmb'):
+                    request.session.set_expiry(60 * 60 * 24 * 7)
+        else:
+            if request.session.get('CheckCode').upper() != request.POST.get('check_code').upper():
+                result['message'] = '验证码错误'
+            else:
+                result['message'] = '用户名或密码错误'
+        return HttpResponse(json.dumps(result))
+
+
+def register(request):
+    if request.method == 'GET':
+        return render(request,'register.html')
+    elif request.method == 'POST':
+        result = {'status': False, 'message': None, 'data': None}
+        form = RegisterForm(request=request, data=request.POST)
+        if form.is_valid():
+            username = form.cleaned_data.get('username')
+            password = form.cleaned_data.get('password')
+            cpassword = form.cleaned_data.get('cpassword')
+            email = form.cleaned_data.get('email')
+            if password !=cpassword:
+                result['message'] = '两次密码输入不一致'
+            else:
+                obj = models.UserInfo.objects.filter(username=username)
+                if obj:
+                    result['message'] = '用户名已存在'
+                else:
+                    models.UserInfo.objects.create(username=username,password=password,email=email)
+                    result['status'] = True
+        else:
+            result['message'] = '输入为空或者格式不对'
+        return HttpResponse(json.dumps(result))
+
+def filter(request,condition, val):
+    """
+    分类显示
+    :param request:
+    :param site:
+    :param condition:
+    :param val:
+    :return:
+    """
+    current_page = request.GET.get('p', 1)
+    current_page = int(current_page)
+    p = request.COOKIES.get('per_page_count', 10)
+    if not p:
+        p = '10'
+    tag_list = models.Tag.objects.all()
+    category_list = models.Article.category_choice
+    date_list = models.Article.objects.raw(
+        'select nid, count(nid) as num,strftime("%Y-%m",create_time) as ctime from web_article group by strftime("%Y-%m",create_time)')
+    template_name = "home.html"
+    if condition == 'tag':
+        article = models.Article.objects.filter(tags__nid=val).all()
+    elif condition == 'category':
+        article = models.Article.objects.filter(category_id=val).all()
+    elif condition == 'date':
+        article = models.Article.objects.all().extra(
+            where=['strftime("%%Y-%%m",create_time)=%s'], params=[val, ]).all()
+    else:
+        article = []
+
+    page_obj = paginations.Page(current_page, len(article), int(p))
+    article_list = article[page_obj.start:page_obj.end]
+    page_str = page_obj.page_str("/home/")
+    return render(
+        request,template_name,
+        {'article_list': article_list, 'tag_list': tag_list, 'category_list': category_list, 'page_str': page_str,
+         'date_list': date_list}
+    )
+
+def search(request,**kwargs):
+    condition = {}
+    for k, v in kwargs.items():
+        kwargs[k] = int(v)
+        if v == '0':
+            pass
+        else:
+            condition[k] = v
+    result = models.Article.objects.filter(**condition)
+    val = request.COOKIES.get('per_page_count', 10)
+    page_obj = paginations.Page(int(request.GET.get('p', 1)), len(result), int(val))
+    tag_list = models.Tag.objects.all()
+    article_list = models.Article.objects.filter(**condition)[page_obj.start:page_obj.end]
+    category_list = models.Article.category_choice
+    date_list = models.Article.objects.raw(
+        'select nid, count(nid) as num,strftime("%Y-%m",create_time) as ctime from web_article group by strftime("%Y-%m",create_time)')
+    page_str = page_obj.page_str(reverse('search', kwargs=kwargs))
+    kwargs['p'] = page_obj.current_page
+    return render(
+        request,
+        'search.html',
+        {
+            'result': article_list,
+            'category_list': category_list,
+            'tag_list': tag_list,
+            'arg_dict': kwargs,
+            'page_str': page_str, 'date_list': date_list,
+            'data_count': len(result),
+        })
+
+@check_auth
+def selfhome(request):
+    return render(request,'selfhome.html')
+
+class FM(forms.Form):
+    username = forms.CharField(max_length=16,error_messages={'required':'用户名不能为空'},label="用户名：",)
+    nickname = forms.CharField(max_length=16,required=False,label="昵称：")
+    password = forms.CharField(min_length=6,max_length=12,error_messages={'required':'密码不能为空','min_length':'长度不能小于6'},label="密码：")
+    email = forms.EmailField(error_messages={'invalid':'格式错误','required':'用户名不能为空'},label="邮箱：")
+
+    username.widget.attrs.update({'class': 'form-control'})
+    nickname.widget.attrs.update({'class': 'form-control'})
+    password.widget.attrs.update({'class': 'form-control'})
+    email.widget.attrs.update({'class': 'form-control'})
+
+@check_auth
+def self_info(request):
+    if request.method == 'GET':
+        return render(request, 'self_info.html')
+    elif request.method == 'POST':
+        obj = FM(request.POST)
+        r = obj.is_valid()
+        if r:
+            u = request.session.get('user_info', None)
+            u_id = u['nid']
+            models.UserInfo.objects.filter(nid=u_id).update(**obj.cleaned_data)
+            request.session['user_info']=obj.cleaned_data
+            return redirect('/selfhome.html')
+        else:
+            return render(request, 'self_info.html', {'obj': obj})
+
+@check_auth
+def avatar_upload(request):
+    ret = {'status': False, 'data': None, 'message': None}
+    if request.method == 'POST':
+        file_obj = request.FILES.get('avatar_img')
+        if not file_obj:
+            pass
+        else:
+            file_name = str(uuid.uuid4())+ '.jpg'
+            file_path = os.path.join('static/imgs/avatar', file_name)
+            f = open(file_path, 'wb')
+            for chunk in file_obj.chunks():
+                f.write(chunk)
+            f.close()
+            ret['status'] = True
+            ret['data'] = file_path
+            avatar = '/'+file_path
+            request.session['avatar']=avatar
+            models.UserInfo.objects.filter(username=request.session['user_info']['username']).update(avatar=avatar)
+
+    return HttpResponse(json.dumps(ret))
+
+
+
+def self_info_edit(request):
+    u = request.session['user_info']['username']
+    obj = models.UserInfo.objects.filter(username=u).first()
+    if request.method == 'GET':
+        obj = FM(initial=model_to_dict(obj))
+        return render(request, 'self_info_edit.html',{'obj':obj})
+    elif request.method == 'POST':
+        obj = FM(request.POST)
+        r = obj.is_valid()
+        if r:
+            u = request.session.get('user_info', None)
+            u_id = u['nid']
+            models.UserInfo.objects.filter(nid=u_id).update(**obj.cleaned_data)
+            request.session['user_info']=obj.cleaned_data
+            return redirect('/selfhome.html')
+        else:
+            return render(request, 'self_info_edit.html', {'obj': obj})
+
+
+@check_auth
+def self_blog(request,**kwargs):
+    condition = {}
+    for k, v in kwargs.items():
+        kwargs[k] = int(v)
+        if v == '0':
+            pass
+        else:
+            condition[k] = v
+    condition['author_id'] = request.session['user_info']['nid']
+    result = models.Article.objects.filter(**condition)
+    val = request.COOKIES.get('per_page_count_self',10)
+    page_obj = paginations.Page(int(request.GET.get('p', 1)), len(result), int(val))
+    page_str = page_obj.page_str(reverse('self_blog', kwargs=kwargs))
+    article_list = models.Article.objects.filter(**condition)[page_obj.start:page_obj.end]
+    tag_list = models.Tag.objects.all()
+    category_list = models.Article.category_choice
+    kwargs['p'] = page_obj.current_page
+    if article_list:
+        return render(
+            request,
+            'self_blog.html',
+            {
+                'result': article_list,
+                'category': category_list,
+                'tag': tag_list,
+                'arg_dict': kwargs,
+                'page_str': page_str,
+                'data_count': len(result),
+            })
+    else:
+        return render(request, 'self_blog_blank.html',
+                      {'data_count':len(result),'category': category_list,'tag': tag_list,'arg_dict': kwargs})
+
+def article(request,article_id):
+    category_list = models.Article.category_choice
+    tag_list = models.Tag.objects.all()
+    date_list = models.Article.objects.raw(
+        'select nid, count(nid) as num,strftime("%Y-%m",create_time) as ctime from web_article group by strftime("%Y-%m",create_time)')
+    article = models.Article.objects.filter(nid=article_id).select_related('author','detail').first()
+    return render(
+        request,
+        'article.html',
+        {
+            'article': article,
+            'tag_list': tag_list,
+            'category_list': category_list,
+            'date_list': date_list,
+        }
+    )
+
+
+def logout(request):
+    request.session.clear()
+    return redirect('/login.html')
+
+
+@check_auth
+def publish(request):
+    if request.method == 'GET':
+        obj = ArticleForm(request=request)
+        return render(request,'publish.html',{'form':obj})
+    elif request.method == 'POST':
+        form = ArticleForm(request=request, data=request.POST)
+        if form.is_valid():
+            with transaction.atomic():
+                tags = form.cleaned_data.pop('tags')
+                detail = form.cleaned_data.pop('detail')
+                detail = XSSFilter().process(detail)
+                a_obj = models.ArticleContent.objects.create(content=detail)
+                form.cleaned_data['detail_id'] = a_obj.nid
+                form.cleaned_data['author_id'] = request.session['user_info']['nid']
+                obj = models.Article.objects.create(**form.cleaned_data)
+                tag_list = []
+                for tag_id in tags:
+                    tag_id = int(tag_id)
+                    tag_list.append(models.Article2Tag(article_id=obj.nid, tag_id=tag_id))
+                models.Article2Tag.objects.bulk_create(tag_list)
+            return redirect('self_blog/article-0-0.html')
+        else:
+            return render(request, 'publish.html', {'form': form})
+    else:
+            return redirect('/home.html')
+
+def checkcode(request):
+
+    stream = BytesIO()
+    img,code = create_validate_code()
+    img.save(stream,'PNG')
+    request.session['Checkcode'] = code
+    return HttpResponse(stream.getvalue())
+
+
+def article_edit(request,article_id):
+    if request.method == 'GET':
+        o = models.Article.objects.filter(nid=article_id).first()
+        t = list(zip(*o.tags.values_list('nid')))[0]
+        dic = {'title':o.title,'content':o.content,'category_id':o.category_id,'tags':t,'detail':o.detail.content}
+        obj = ArticleForm(request=request,initial=dic)
+        return render(request,'article_edit.html',{'form':obj,'article_id':article_id})
+    elif request.method == 'POST':
+        form = ArticleForm(request=request, data=request.POST)
+        if form.is_valid():
+            obj = models.Article.objects.filter(nid=article_id).first()
+            with transaction.atomic():
+                detail = form.cleaned_data.pop('detail')
+                detail = XSSFilter().process(detail)
+                tags = form.cleaned_data.pop('tags')
+                a_obj = models.ArticleContent.objects.filter(article__nid=article_id).first()
+                form.cleaned_data['detail_id'] = a_obj.nid
+                form.cleaned_data['author_id'] = request.session['user_info']['nid']
+
+                models.Article.objects.filter(nid=article_id).update(**form.cleaned_data)
+                models.ArticleContent.objects.filter(article__nid=article_id).update(content=detail)
+                models.Article2Tag.objects.filter(article=obj).delete()
+                tag_list = []
+                for tag_id in tags:
+                    tag_id = int(tag_id)
+                    tag_list.append(models.Article2Tag(article_id=obj.nid, tag_id=tag_id))
+                models.Article2Tag.objects.bulk_create(tag_list)
+            return redirect('/self_blog/article-0-0.html')
+        else:
+            return render(request, 'article_edit.html', {'form': form, 'nid': article_id})
+
+def article_delete(request,article_id):
+
+    with transaction.atomic():
+        models.Article.objects.filter(nid=article_id).delete()
+        models.ArticleContent.objects.filter(article__nid=article_id).delete()
+    return redirect('/self_blog/article-0-0.html')
+
+
+
+
+
+
+
+@check_auth
+def trouble_list(request):
+    nid = request.session['user_info']['nid']
+    result = models.Trouble.objects.filter(user_id=nid).order_by('-status').only('tid','title','status','ctime','processor')
+    return render(request,'self_trouble_list.html',{'result':result})
+
+
+def trouble_create(request):
+    if request.method == 'GET':
+        form = TroubleForm()
+    else:
+        form = TroubleForm(request.POST)
+        if form.is_valid():
+            dic={}
+            dic['user_id'] = request.session['user_info']['nid']
+            dic['ctime']=datetime.datetime.now()
+            dic['status'] = 1
+            dic.update(form.cleaned_data)
+            models.Trouble.objects.create(**dic)
+            return redirect('/trouble-list.html')
+    return render(request, 'trouble_create.html', {'form': form})
+
+def trouble_edit(request,tid):
+    if request.method == 'GET':
+        obj = models.Trouble.objects.filter(tid=tid,status=1).only('title','detail').first()
+        if not obj:
+            return HttpResponse('已经被处理，无法查看')
+        form = TroubleForm(initial=model_to_dict(obj))
+        return render(request,'trouble_edit.html',{'form': form,'tid':tid})
+    else:
+        form = TroubleForm(request.POST)
+        if form.is_valid():
+            v = models.Trouble.objects.filter(tid=tid, status=1).update(**form.cleaned_data)    #返回受更新影响的行数
+            if not v:
+                print('单子已被处理，无法再修改')
+            return redirect('/trouble-list.html')
+
+def trouble_deal_list(request):
+    from django.db.models import Q
+    nid = request.session['user_info']['nid']
+    result = models.Trouble.objects.filter(Q(processor_id=nid)|Q(status=1)).order_by('status')
+    return render(request,'self_trouble_deal_list.html',{'result':result})
+
+def trouble_deal(request,tid):
+    nid = request.session['user_info']['nid']
+    obj = models.Trouble.objects.filter(tid=tid).first()
+    if request.method == 'GET':
+        ret = models.Trouble.objects.filter(tid=tid,processor_id=nid)
+        if not ret:
+            v = models.Trouble.objects.filter(tid=tid,status=1).update(processor_id=nid,status=2)
+            if not v:
+                return HttpResponse('已被抢走')
+        form = TroubleDealForm(initial=model_to_dict(obj))
+    else:
+        ret = models.Trouble.objects.filter(tid=tid,processor_id=nid,status=2).count()
+        if not ret:
+            return HttpResponse('用户错误')
+        form = TroubleDealForm(request.POST)
+        if form.is_valid():
+            dic={}
+            dic['ptime']=datetime.datetime.now()
+            dic['status']=3
+            dic.update(form.cleaned_data)
+            models.Trouble.objects.filter(tid=tid).update(**dic)
+            return redirect('/trouble_deal_list.html')
+    return render(request, 'trouble_deal.html', {'form': form, 'tid': tid,'obj':obj})
+
+def trouble_json_report(request):
+    user_list = models.UserInfo.objects.filter()
+    response = []
+    for user in user_list:
+        from django.db import connection, connections
+        cursor = connection.cursor()
+        cursor.execute("""SELECT strftime('%%s',strftime("%%Y-%%m-01",ctime))*1000,count(tid) from web_trouble where processor_id = %s group by strftime("%%Y-%%m-01",ctime)""", [user.nid,])
+        result = cursor.fetchall()
+        temp = {
+            'name':user.username,
+            'data':result
+        }
+        response.append(temp)
+    return HttpResponse(json.dumps(response))
+
+def trouble_report(request):
+    return render(request,'trouble_report.html')
+
+
+
+
+
+
+

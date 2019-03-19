@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/static/plugins/bootstrap/css/bootstrap.css"/>
+    <link rel="stylesheet" href="/static/plugins/font-awesome/css/font-awesome.css"/>
+    <link rel="stylesheet" href="/static/css/edmure.css"/>
+    <link rel="stylesheet" href="/static/css/commons.css"/>
+    <link rel="stylesheet" href="/static/css/account.css"/>
+</head>
+<body>
+    <div class="register">
+        <div style="font-size: 25px; font-weight: bold;text-align: center;">
+            注册账号
+        </div>
+        <form id="fm" method="POST" action="/register.html">
+            {% csrf_token %}
+            <div class="form-group">
+                <label for="username">用户名：</label>
+                <input type="text" class="form-control" name="username" id="username" placeholder="请输入用户名"  data-toggle="tooltip" title="用户名长度需大于8小于32字符">
+            </div>
+            <div class="form-group">
+                <label for="password">密码：</label>
+                <input type="password" class="form-control" name="password" id="password" placeholder="请输入密码" data-toggle="tooltip" title="密码需包含数字，字母、特殊字符">
+            </div>
+            <div class="form-group">
+                <label for="cpassword">确认密码：</label>
+                <input type="password" class="form-control" name="cpassword" id="cpassword" placeholder="请再次输入密码" data-toggle="tooltip" title="请再次输入密码">
+            </div>
+            <div class="form-group">
+                <label for="email">邮箱：</label>
+                <input type="password" class="form-control" name="email" id="email" placeholder="请输入邮箱">
+            </div>
+
+            <div class="row">
+                <div class="col-xs-3">
+                    <a id="submit" class="btn btn-default" >提 交</a>
+                </div>
+                <div class="col-xs-9" style="padding-left: 0;">
+                    <div class="alert alert-danger hide">
+                        <span style="padding: 0 5px 0 5px;display: inline-block;font-size: 14px">
+                            <i class="fa fa-minus-circle" aria-hidden="true"></i>
+                        </span>
+                        <span id="error_msg" style="font-size: 12px;"></span>
+                    </div>
+                </div>
+            </div>
+        </form>
+        <a style="float:right;" href="/login.html">已有账号？点击登录</a>
+    </div>
+<script src="/static/js/jquery-1.12.4.js"></script>
+    <script type="text/javascript">
+        $(function () {
+            bindLogin();
+        });
+        function bindLogin() {
+            $('#submit').click(function () {
+                var $msg = $('#error_msg');
+                $msg.parent().addClass('hide');
+                $.ajax({
+                    url: '/register.html',
+                    type: 'POST',
+                    data: $('#fm').serialize(),
+                    dataType: 'JSON',
+                    success: function (arg) {
+                        if(arg.status){
+                            location.href = '/login.html'
+                        }else{
+                            $msg.parent().removeClass('hide');
+                            $msg.text(arg.message);
+                        }
+
+                    }
+                })
+
+            })
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+/*.pagination .page{*/
+    /*display: inline-block;*/
+    /*padding: 5px;*/
+    /*background-color: white;*/
+    /*margin: 5px;*/
+    /*border-style: solid;*/
+    /*font-size: 10%;*/
+/*}*/
+/*.pagination .page.active{*/
+    /*background-color: blue;*/
+    /*border-style: solid;*/
+    /*color: white;*/
+/*}*/
+.jump{
+    width:50px
+}
+.pg-body content{
+    position: absolute;
+    right: 0;
+    left: 280px;
+    overflow: scroll;
+}
